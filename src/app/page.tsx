@@ -9,15 +9,31 @@ import Navigation from '@/components/Navigation';
 import CommunityFeed from '@/components/CommunityFeed';
 import CreateQuoteModal from '@/components/CreateQuoteModal';
 import UserProfile from '@/components/UserProfile';
+import AnalyticsDashboard from '@/components/AnalyticsDashboard';
+import PremiumUpgradeModal from '@/components/PremiumUpgradeModal';
+import AISearchComponent from '@/components/AISearchComponent';
 import { UserSystem } from '@/lib/userSystem';
 import { User, UserQuote } from '@/types/phase3';
+import { UserInsights } from '@/types/phase4';
+import { AISearchQuery } from '@/types/phase5';
+import AnalyticsService from '@/lib/analyticsService';
+import PremiumService from '@/lib/premiumService';
+import AIService from '@/lib/aiService';
 
-type PageType = 'home' | 'favorites' | 'history' | 'categories' | 'community' | 'profile' | 'create';
+type PageType = 'home' | 'favorites' | 'history' | 'categories' | 'community' | 'profile' | 'create' | 'analytics' | 'premium';
 
 export default function Home() {
   const [currentPage, setCurrentPage] = useState<PageType>('home');
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [analyticsTimeRange, setAnalyticsTimeRange] = useState<'7d' | '30d' | '90d' | '1y'>('30d');
+  const [analyticsInsights, setAnalyticsInsights] = useState<UserInsights | null>(null);
+  
+  // Phase 5 states
+  const [showPremiumModal, setShowPremiumModal] = useState(false);
+  const [showAISearch, setShowAISearch] = useState(false);
+  const [searchHistory, setSearchHistory] = useState<AISearchQuery[]>([]);
+  const [userTier, setUserTier] = useState<'free' | 'premium' | 'pro'>('free');
 
   useEffect(() => {
     // Check for logged in user
@@ -33,10 +49,113 @@ export default function Home() {
     }
   }, [currentPage]);
 
+  useEffect(() => {
+    // Load analytics data when user is available
+    if (currentUser) {
+      const loadAnalytics = async () => {
+        try {
+          const analyticsInstance = AnalyticsService.getInstance();
+          const insights = analyticsInstance.generateUserInsights(currentUser.id, analyticsTimeRange);
+          setAnalyticsInsights(insights);
+        } catch (error) {
+          console.error('Error loading analytics:', error);
+          // Set default insights
+          setAnalyticsInsights({
+            userId: currentUser.id,
+            generatedAt: new Date().toISOString(),
+            timeRange: analyticsTimeRange,
+            stats: {
+              quotesViewed: 0,
+              favoriteQuotes: 0,
+              quotesShared: 0,
+              categoriesExplored: [],
+              activeHours: [],
+              activeDays: [],
+              avgSessionDuration: 0,
+              totalSessions: 0
+            },
+            preferences: {
+              favoriteCategories: [],
+              favoriteAuthors: [],
+              peakActivity: { hour: 12, day: 'Monday' },
+              preferredQuoteLength: 'medium',
+              moodTrend: []
+            },
+            recommendations: {
+              suggestedCategories: [],
+              suggestedAuthors: [],
+              suggestedUsers: [],
+              suggestedCommunities: [],
+              personalizedQuotes: []
+            }
+          });
+        }
+      };
+      loadAnalytics();
+    }
+  }, [currentUser, analyticsTimeRange]);
+
+  useEffect(() => {
+    // Load premium subscription data
+    if (currentUser) {
+      const loadPremiumData = async () => {
+        try {
+          const premiumService = PremiumService.getInstance();
+          const subscription = await premiumService.checkSubscription(currentUser.id);
+          setUserTier(subscription.tier);
+        } catch (error) {
+          console.error('Error loading premium data:', error);
+        }
+      };
+      loadPremiumData();
+    }
+  }, [currentUser]);
+
   const handleCreateQuoteSuccess = (quote: UserQuote) => {
     setShowCreateModal(false);
     // Optionally navigate to community to see the new quote
     setCurrentPage('community');
+  };
+
+  // Phase 5 handlers
+  const handlePremiumUpgrade = async (tier: 'free' | 'premium' | 'pro') => {
+    if (!currentUser || tier === 'free') return;
+    
+    try {
+      const premiumService = PremiumService.getInstance();
+      const success = await premiumService.upgradeSubscription(currentUser.id, tier);
+      
+      if (success) {
+        setUserTier(tier);
+        setShowPremiumModal(false);
+        alert(`🎉 Selamat! Anda berhasil upgrade ke ${tier}!`);
+      } else {
+        alert('Upgrade gagal. Silakan coba lagi.');
+      }
+    } catch (error) {
+      console.error('Upgrade error:', error);
+      alert('Terjadi kesalahan saat upgrade.');
+    }
+  };
+
+  const handleAISearch = async (query: AISearchQuery) => {
+    try {
+      const aiService = AIService.getInstance();
+      const results = await aiService.searchQuotes(query);
+      
+      // Update search history
+      setSearchHistory(prev => [query, ...prev.slice(0, 9)]); // Keep last 10 searches
+    } catch (error) {
+      console.error('AI Search error:', error);
+    }
+  };
+
+  const handleOpenAISearch = () => {
+    if (userTier === 'free') {
+      setShowPremiumModal(true);
+      return;
+    }
+    setShowAISearch(true);
   };
 
   const renderCurrentPage = () => {
@@ -61,6 +180,113 @@ export default function Home() {
                 console.log('Quote clicked:', quote);
               }}
             />
+          </div>
+        );
+      case 'analytics':
+        if (!currentUser) {
+          return (
+            <div className="max-w-4xl mx-auto p-6 text-center">
+              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-12">
+                <div className="text-6xl mb-4">📊</div>
+                <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-4">
+                  Analytics Dashboard
+                </h2>
+                <p className="text-gray-600 dark:text-gray-400">
+                  Anda harus login untuk melihat analytics
+                </p>
+              </div>
+            </div>
+          );
+        }
+        return (
+          <div className="max-w-4xl mx-auto p-6">
+            <AnalyticsDashboard 
+              userId={currentUser.id}
+              timeRange={analyticsTimeRange}
+              insights={analyticsInsights || {
+                userId: currentUser.id,
+                generatedAt: new Date().toISOString(),
+                timeRange: analyticsTimeRange,
+                stats: {
+                  quotesViewed: 0,
+                  favoriteQuotes: 0,
+                  quotesShared: 0,
+                  categoriesExplored: [],
+                  activeHours: [],
+                  activeDays: [],
+                  avgSessionDuration: 0,
+                  totalSessions: 0
+                },
+                preferences: {
+                  favoriteCategories: [],
+                  favoriteAuthors: [],
+                  peakActivity: { hour: 12, day: 'Monday' },
+                  preferredQuoteLength: 'medium',
+                  moodTrend: []
+                },
+                recommendations: {
+                  suggestedCategories: [],
+                  suggestedAuthors: [],
+                  suggestedUsers: [],
+                  suggestedCommunities: [],
+                  personalizedQuotes: []
+                }
+              }}
+              onTimeRangeChange={setAnalyticsTimeRange}
+            />
+          </div>
+        );
+      case 'premium':
+        if (userTier === 'free') {
+          setShowPremiumModal(true);
+          setCurrentPage('home');
+          return null;
+        }
+        return (
+          <div className="max-w-4xl mx-auto p-6">
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-8">
+              <div className="text-center mb-8">
+                <div className="text-6xl mb-4">💎</div>
+                <h2 className="text-3xl font-bold text-gray-800 dark:text-white mb-4">
+                  Premium Dashboard
+                </h2>
+                <p className="text-gray-600 dark:text-gray-400">
+                  Kelola subscription dan akses fitur premium Anda
+                </p>
+              </div>
+              
+              <div className="grid md:grid-cols-2 gap-6">
+                <div className="p-6 bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900 dark:to-purple-900 rounded-lg">
+                  <h3 className="text-xl font-semibold text-gray-800 dark:text-white mb-2">
+                    Status Subscription
+                  </h3>
+                  <p className="text-gray-600 dark:text-gray-400 mb-4">
+                    Tier saat ini: <span className="font-bold text-blue-600">{userTier.toUpperCase()}</span>
+                  </p>
+                  <button 
+                    onClick={() => setShowPremiumModal(true)}
+                    className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition-colors"
+                  >
+                    Kelola Subscription
+                  </button>
+                </div>
+                
+                <div className="p-6 bg-gradient-to-r from-green-50 to-teal-50 dark:from-green-900 dark:to-teal-900 rounded-lg">
+                  <h3 className="text-xl font-semibold text-gray-800 dark:text-white mb-2">
+                    Fitur Premium
+                  </h3>
+                  <p className="text-gray-600 dark:text-gray-400 mb-4">
+                    Akses penuh ke semua fitur canggih
+                  </p>
+                  <button 
+                    onClick={handleOpenAISearch}
+                    className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition-colors"
+                  >
+                    🤖 Buka AI Search
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         );
       case 'profile':
@@ -160,7 +386,11 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 dark:from-gray-900 dark:via-blue-900 dark:to-indigo-900">
-      <Navigation currentPage={currentPage} onPageChange={setCurrentPage} />
+      <Navigation 
+        currentPage={currentPage} 
+        onPageChange={setCurrentPage}
+        onAISearchOpen={handleOpenAISearch}
+      />
       
       <main className="pb-8">
         {renderCurrentPage()}
@@ -174,6 +404,23 @@ export default function Home() {
           onSuccess={handleCreateQuoteSuccess}
         />
       )}
+      
+      {/* Premium Upgrade Modal */}
+      <PremiumUpgradeModal
+        isOpen={showPremiumModal}
+        onClose={() => setShowPremiumModal(false)}
+        currentTier={userTier}
+        onUpgrade={handlePremiumUpgrade}
+      />
+      
+      {/* AI Search Modal */}
+      <AISearchComponent
+        isVisible={showAISearch}
+        onClose={() => setShowAISearch(false)}
+        onSearch={handleAISearch}
+        searchHistory={searchHistory}
+        isPremium={userTier !== 'free'}
+      />
       
       {/* Footer */}
       <footer className="border-t border-gray-200 dark:border-gray-700 bg-white/50 dark:bg-gray-900/50 backdrop-blur-sm">

@@ -13,17 +13,19 @@ import NotificationSystem from './NotificationSystem';
 import AuthModal from './AuthModal';
 
 interface NavigationProps {
-  currentPage: 'home' | 'favorites' | 'history' | 'categories' | 'community' | 'profile' | 'create';
-  onPageChange: (page: 'home' | 'favorites' | 'history' | 'categories' | 'community' | 'profile' | 'create') => void;
+  currentPage: 'home' | 'favorites' | 'history' | 'categories' | 'community' | 'profile' | 'create' | 'analytics' | 'premium';
+  onPageChange: (page: 'home' | 'favorites' | 'history' | 'categories' | 'community' | 'profile' | 'create' | 'analytics' | 'premium') => void;
+  onAISearchOpen?: () => void;
 }
 
-export default function Navigation({ currentPage, onPageChange }: NavigationProps) {
+export default function Navigation({ currentPage, onPageChange, onAISearchOpen }: NavigationProps) {
   const [favoritesCount, setFavoritesCount] = useState(0);
   const [historyCount, setHistoryCount] = useState(0);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [userTier, setUserTier] = useState<'free' | 'premium' | 'pro'>('free');
 
   useEffect(() => {
     // Update counts
@@ -77,14 +79,34 @@ export default function Navigation({ currentPage, onPageChange }: NavigationProp
       icon: '✍️',
       description: 'Tulis quote inspiratif',
       badge: undefined
+    },
+    {
+      id: 'analytics' as const,
+      label: 'Analytics',
+      icon: '📊',
+      description: 'Insights & statistik',
+      badge: undefined
     }
   ];
 
-  const menuItems = currentUser ? [...publicMenuItems, ...socialMenuItems] : publicMenuItems;
+  const premiumMenuItems = [
+    {
+      id: 'premium' as const,
+      label: userTier === 'free' ? 'Upgrade Premium' : 'Premium Dashboard',
+      icon: userTier === 'free' ? '⭐' : '💎',
+      description: userTier === 'free' ? 'Unlock fitur premium' : 'Kelola subscription',
+      badge: userTier === 'free' ? 'NEW' : undefined,
+      isPremium: true
+    }
+  ];
+
+  const menuItems = currentUser 
+    ? [...publicMenuItems, ...socialMenuItems, ...premiumMenuItems] 
+    : [...publicMenuItems, ...premiumMenuItems];
 
   const handlePageChange = (page: typeof currentPage) => {
     // Redirect to auth if trying to access social features without login
-    if (!currentUser && ['community', 'create', 'profile'].includes(page)) {
+    if (!currentUser && ['community', 'create', 'profile', 'analytics'].includes(page)) {
       setShowAuthModal(true);
       return;
     }
@@ -138,6 +160,7 @@ export default function Navigation({ currentPage, onPageChange }: NavigationProp
                       ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300'
                       : 'text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800'
                     }
+                    ${(item as any).isPremium && userTier === 'free' ? 'bg-gradient-to-r from-yellow-400 to-orange-500 text-white hover:from-yellow-500 hover:to-orange-600' : ''}
                   `}
                 >
                   <span className="flex items-center space-x-2">
@@ -146,11 +169,30 @@ export default function Navigation({ currentPage, onPageChange }: NavigationProp
                   </span>
                   {item.badge && (
                     <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
-                      {item.badge > 99 ? '99+' : item.badge}
+                      {typeof item.badge === 'number' && item.badge > 99 ? '99+' : item.badge}
                     </span>
                   )}
                 </button>
               ))}
+              
+              {/* AI Search Button */}
+              {currentUser && onAISearchOpen && (
+                <button
+                  onClick={onAISearchOpen}
+                  className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
+                    userTier === 'free' 
+                      ? 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300' 
+                      : 'text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20'
+                  }`}
+                  title={userTier === 'free' ? 'Upgrade premium untuk AI Search' : 'AI Search'}
+                >
+                  <span className="flex items-center space-x-2">
+                    <span>🔍</span>
+                    <span>AI Search</span>
+                    {userTier === 'free' && <span className="text-xs">🔒</span>}
+                  </span>
+                </button>
+              )}
             </div>
 
             {/* User Menu & Actions */}
@@ -278,7 +320,7 @@ export default function Navigation({ currentPage, onPageChange }: NavigationProp
                     </div>
                     {item.badge && (
                       <span className="ml-auto bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
-                        {item.badge > 99 ? '99+' : item.badge}
+                        {typeof item.badge === 'number' && item.badge > 99 ? '99+' : item.badge}
                       </span>
                     )}
                   </div>

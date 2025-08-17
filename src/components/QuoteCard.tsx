@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react';
 import { Quote } from '@/types';
 import { QuotableAPI } from '@/lib/quotable';
 import { addToHistory, recordVisit } from '@/lib/localStorage';
+import { UserSystem } from '@/lib/userSystem';
+import AnalyticsService from '@/lib/analyticsService';
 import FavoriteButton from './FavoriteButton';
 import ShareButton from './ShareButton';
 
@@ -11,6 +13,7 @@ export default function QuoteCard() {
   const [quote, setQuote] = useState<Quote | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const analytics = AnalyticsService.getInstance();
 
   const fetchQuote = async () => {
     try {
@@ -23,6 +26,18 @@ export default function QuoteCard() {
       if (data) {
         addToHistory(data);
         recordVisit();
+        
+        // Track analytics
+        const currentUser = UserSystem.getCurrentUser();
+        const quoteLength = data.length || data.content.length;
+        analytics.track('quote_view', {
+          quoteId: data._id,
+          content: data.content,
+          author: data.author,
+          tags: data.tags,
+          length: quoteLength,
+          quoteLength: quoteLength < 100 ? 'short' : quoteLength < 300 ? 'medium' : 'long'
+        }, currentUser?.id);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong');
