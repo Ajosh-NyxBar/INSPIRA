@@ -175,18 +175,30 @@ InspirasiHub uses Firebase for authentication, database, and storage. To set up 
    - Create new OAuth App with callback URL: `https://your-project.firebaseapp.com/__/auth/handler`
 
 4. **Environment Variables**:
-   Create `.env.local` file with your Firebase config:
+   Copy `.env.example` to `.env.local` and fill in your Firebase config:
+   ```bash
+   cp .env.example .env.local
+   ```
+   
+   Then edit `.env.local` with your actual Firebase web app credentials:
    ```env
-   NEXT_PUBLIC_FIREBASE_API_KEY=your_api_key
+   # Get these from Firebase Console > Project Settings > Web App Config
+   NEXT_PUBLIC_FIREBASE_API_KEY=your_web_api_key
    NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
    NEXT_PUBLIC_FIREBASE_PROJECT_ID=your_project_id
    NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=your_project.appspot.com
    NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
-   NEXT_PUBLIC_FIREBASE_APP_ID=your_app_id
+   NEXT_PUBLIC_FIREBASE_APP_ID=your_web_app_id
    
-   # Optional: Set to true for demo mode (works without Firebase)
+   # Set to false for production, true for demo mode
    NEXT_PUBLIC_DEMO_MODE=false
    ```
+
+   **Important**: Get the correct web app config from Firebase Console:
+   - Go to Project Settings > General
+   - Scroll to "Your apps" section  
+   - Add a web app or select existing one
+   - Copy the config object values
 
 5. **Demo Mode**:
    If you don't have Firebase setup, set `NEXT_PUBLIC_DEMO_MODE=true` to use local storage fallback.
