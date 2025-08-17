@@ -90,6 +90,22 @@ export default function Home() {
       default:
         return (
           <div className="min-h-screen flex flex-col items-center justify-center p-4">
+            {/* OAuth Features Announcement */}
+            {!currentUser && (
+              <div className="w-full max-w-4xl mx-auto mb-6">
+                <div className="bg-gradient-to-r from-green-500 to-blue-500 text-white rounded-xl p-4 shadow-lg">
+                  <div className="flex items-center justify-center space-x-3">
+                    <span className="text-2xl">🎉</span>
+                    <div className="text-center">
+                      <h3 className="font-bold text-lg">Fitur Baru: Login dengan Google & GitHub!</h3>
+                      <p className="text-sm opacity-90">Akses lebih mudah dengan UI modern dan minimalis</p>
+                    </div>
+                    <span className="text-2xl">✨</span>
+                  </div>
+                </div>
+              </div>
+            )}
+            
             <div className="text-center mb-8">
               <h1 className="text-4xl md:text-6xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-4">
                 InspirasiHub ✨
@@ -108,6 +124,10 @@ export default function Home() {
                     🌟 Fitur Baru - Komunitas Inspirasi!
                   </h3>
                   <ul className="text-sm text-gray-600 dark:text-gray-400 space-y-2 text-left">
+                    <li className="flex items-center space-x-2">
+                      <span>🔐</span>
+                      <span>Login dengan Google, GitHub, atau Email</span>
+                    </li>
                     <li className="flex items-center space-x-2">
                       <span>✍️</span>
                       <span>Buat dan bagikan quotes Anda sendiri</span>
