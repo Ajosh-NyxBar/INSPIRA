@@ -1,25 +1,28 @@
 /**
  * Modern Authentication Modal Component
- * Enhanced with OAuth providers for Phase 3
+ * Enhanced with OAuth providers and Phone Authentication for Phase 3
  */
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { UserSystem } from '@/lib/userSystem';
 import { User } from '@/types/phase3';
+import { RecaptchaVerifier, ConfirmationResult } from 'firebase/auth';
 
 interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: (user: User) => void;
-  initialMode?: 'login' | 'register';
+  initialMode?: 'login' | 'register' | 'phone';
 }
 
 export default function AuthModal({ isOpen, onClose, onSuccess, initialMode = 'login' }: AuthModalProps) {
-  const [mode, setMode] = useState<'login' | 'register'>(initialMode);
+  const [mode, setMode] = useState<'login' | 'register' | 'phone' | 'verify'>(initialMode);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null);
+  const recaptchaRef = useRef<RecaptchaVerifier | null>(null);
   
   // Form states
   const [formData, setFormData] = useState({
@@ -27,7 +30,9 @@ export default function AuthModal({ isOpen, onClose, onSuccess, initialMode = 'l
     email: '',
     displayName: '',
     password: '',
-    confirmPassword: ''
+    confirmPassword: '',
+    phoneNumber: '',
+    verificationCode: ''
   });
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -70,12 +75,42 @@ export default function AuthModal({ isOpen, onClose, onSuccess, initialMode = 'l
         setError('Konfirmasi password tidak cocok');
         return false;
       }
-    } else {
-      if (!formData.username.trim() && !formData.email.trim()) {
-        setError('Username atau email harus diisi');
+    } else if (mode === 'phone') {
+      if (!formData.phoneNumber.trim()) {
+        setError('Nomor telepon harus diisi');
         return false;
       }
-      if (!formData.password) {
+      if (!/^\+[1-9]\d{1,14}$/.test(formData.phoneNumber)) {
+        setError('Format nomor telepon tidak valid (contoh: +6281234567890)');
+        return false;
+      }
+      if (!formData.username.trim()) {
+        setError('Username harus diisi');
+        return false;
+      }
+      if (formData.username.length < 3) {
+        setError('Username minimal 3 karakter');
+        return false;
+      }
+      if (!formData.displayName.trim()) {
+        setError('Nama tampilan harus diisi');
+        return false;
+      }
+    } else if (mode === 'verify') {
+      if (!formData.verificationCode.trim()) {
+        setError('Kode verifikasi harus diisi');
+        return false;
+      }
+      if (formData.verificationCode.length !== 6) {
+        setError('Kode verifikasi harus 6 digit');
+        return false;
+      }
+    } else {
+      if (!formData.username.trim() && !formData.email.trim() && !formData.phoneNumber.trim()) {
+        setError('Username, email, atau nomor telepon harus diisi');
+        return false;
+      }
+      if (!formData.password && mode === 'login') {
         setError('Password harus diisi');
         return false;
       }
@@ -120,6 +155,78 @@ export default function AuthModal({ isOpen, onClose, onSuccess, initialMode = 'l
     }
   };
 
+  // Phone authentication functions
+  const handlePhoneInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: value
+    }));
+  };
+
+  const handlePhoneSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+
+    try {
+      // Validate phone number
+      if (!formData.phoneNumber.trim()) {
+        throw new Error('Nomor HP tidak boleh kosong');
+      }
+
+      // Setup reCAPTCHA if not already done
+      if (!recaptchaRef.current) {
+        const recaptcha = await UserSystem.setupRecaptcha('recaptcha-container');
+        recaptchaRef.current = recaptcha;
+      }
+
+      // Send verification code
+      const result = await UserSystem.sendPhoneVerification(formData.phoneNumber, recaptchaRef.current);
+      
+      if (result.success && result.confirmationResult) {
+        setConfirmationResult(result.confirmationResult);
+        setMode('verify');
+      } else {
+        throw new Error(result.error || 'Gagal mengirim kode verifikasi');
+      }
+    } catch (error: any) {
+      setError(error.message || 'Terjadi kesalahan saat mengirim kode verifikasi');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifySubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+
+    try {
+      // Validate verification code
+      if (!formData.verificationCode.trim()) {
+        throw new Error('Kode verifikasi tidak boleh kosong');
+      }
+
+      if (!confirmationResult) {
+        throw new Error('Konfirmasi tidak ditemukan. Silakan kirim ulang kode.');
+      }
+
+      // Verify phone number
+      const result = await UserSystem.verifyPhoneCode(confirmationResult, formData.verificationCode);
+      
+      if (result.success && result.user) {
+        onSuccess(result.user);
+      } else {
+        throw new Error(result.error || 'Verifikasi gagal');
+      }
+    } catch (error: any) {
+      setError(error.message || 'Kode verifikasi tidak valid');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleOAuthLogin = async (provider: 'google' | 'github') => {
     setLoading(true);
     setError(null);
@@ -143,20 +250,88 @@ export default function AuthModal({ isOpen, onClose, onSuccess, initialMode = 'l
     }
   };
 
+  const handlePhoneAuth = async () => {
+    if (!validateForm()) return;
+    
+    setLoading(true);
+    setError(null);
+    
+    try {
+      // Setup reCAPTCHA
+      const recaptcha = await UserSystem.setupRecaptcha('recaptcha-container');
+      recaptchaRef.current = recaptcha;
+      
+      // Send verification code
+      const result = await UserSystem.sendPhoneVerification(formData.phoneNumber, recaptcha);
+      
+      if (result.success && result.confirmationResult) {
+        setConfirmationResult(result.confirmationResult);
+        setMode('verify');
+      } else {
+        setError(result.error || 'Gagal mengirim kode verifikasi');
+      }
+    } catch (err) {
+      setError('Terjadi kesalahan sistem');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyCode = async () => {
+    if (!validateForm() || !confirmationResult) return;
+    
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const result = await UserSystem.verifyPhoneCode(
+        confirmationResult,
+        formData.verificationCode,
+        {
+          username: formData.username,
+          displayName: formData.displayName
+        }
+      );
+      
+      if (result.success && result.user) {
+        onSuccess(result.user);
+        onClose();
+        resetForm();
+      } else {
+        setError(result.error || 'Kode verifikasi tidak valid');
+      }
+    } catch (err) {
+      setError('Terjadi kesalahan sistem');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const resetForm = () => {
     setFormData({
       username: '',
       email: '',
       displayName: '',
       password: '',
-      confirmPassword: ''
+      confirmPassword: '',
+      phoneNumber: '',
+      verificationCode: ''
     });
     setError(null);
+    setConfirmationResult(null);
   };
 
-  const switchMode = () => {
-    setMode(mode === 'login' ? 'register' : 'login');
+  const switchMode = (newMode?: 'login' | 'register' | 'phone') => {
+    if (newMode) {
+      setMode(newMode);
+    } else {
+      setMode(mode === 'login' ? 'register' : 'login');
+    }
     resetForm();
+  };
+
+  const handleModeSwitch = () => {
+    switchMode();
   };
 
   if (!isOpen) return null;
@@ -214,6 +389,17 @@ export default function AuthModal({ isOpen, onClose, onSuccess, initialMode = 'l
               </svg>
               {mode === 'login' ? 'Masuk' : 'Daftar'} dengan GitHub
             </button>
+
+            <button
+              onClick={() => setMode('phone')}
+              disabled={loading}
+              className="w-full flex items-center justify-center px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-xl text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow-md"
+            >
+              <svg className="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+              </svg>
+              Masuk dengan Nomor HP
+            </button>
           </div>
 
           {/* Divider */}
@@ -227,11 +413,100 @@ export default function AuthModal({ isOpen, onClose, onSuccess, initialMode = 'l
           </div>
 
           {/* Form */}
-          <form onSubmit={handleSubmit} className="space-y-4">
+          {mode === 'phone' ? (
+            <form onSubmit={handlePhoneSubmit} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Nomor HP
+                </label>
+                <input
+                  type="tel"
+                  name="phoneNumber"
+                  value={formData.phoneNumber}
+                  onChange={handlePhoneInputChange}
+                  placeholder="+62 812 3456 7890"
+                  className="w-full px-4 py-3 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-800 text-gray-800 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 transition-all duration-200"
+                  disabled={loading}
+                />
+              </div>
+
+              {/* reCAPTCHA container */}
+              <div id="recaptcha-container"></div>
+
+              {/* Error Message */}
+              {error && (
+                <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl">
+                  <p className="text-red-600 dark:text-red-400 text-sm text-center">{error}</p>
+                </div>
+              )}
+
+              {/* Submit Button */}
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full py-3 px-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold rounded-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed transform hover:scale-[1.02] active:scale-[0.98] shadow-lg"
+              >
+                {loading ? 'Mengirim...' : 'Kirim Kode Verifikasi'}
+              </button>
+
+              {/* Back to Login */}
+              <button
+                type="button"
+                onClick={() => setMode('login')}
+                className="w-full text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors duration-200"
+              >
+                Kembali ke Login
+              </button>
+            </form>
+          ) : mode === 'verify' ? (
+            <form onSubmit={handleVerifySubmit} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Kode Verifikasi
+                </label>
+                <input
+                  type="text"
+                  name="verificationCode"
+                  value={formData.verificationCode}
+                  onChange={handlePhoneInputChange}
+                  placeholder="123456"
+                  maxLength={6}
+                  className="w-full px-4 py-3 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-800 text-gray-800 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 transition-all duration-200 text-center text-lg tracking-widest"
+                  disabled={loading}
+                />
+              </div>
+
+              {/* Error Message */}
+              {error && (
+                <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl">
+                  <p className="text-red-600 dark:text-red-400 text-sm text-center">{error}</p>
+                </div>
+              )}
+
+              {/* Submit Button */}
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full py-3 px-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold rounded-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed transform hover:scale-[1.02] active:scale-[0.98] shadow-lg"
+              >
+                {loading ? 'Memverifikasi...' : 'Verifikasi'}
+              </button>
+
+              {/* Back to Phone Input */}
+              <button
+                type="button"
+                onClick={() => setMode('phone')}
+                className="w-full text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors duration-200"
+              >
+                Kirim Ulang Kode
+              </button>
+            </form>
+          ) : (
+            <form onSubmit={handleSubmit} className="space-y-4">
             {/* Username/Email for Login, Username for Register */}
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                {mode === 'login' ? 'Username atau Email' : 'Username'}
+                {mode === 'login' ? 'Username, Email, atau Nomor HP' : 'Username'}
               </label>
               <input
                 type="text"
@@ -340,6 +615,7 @@ export default function AuthModal({ isOpen, onClose, onSuccess, initialMode = 'l
               )}
             </button>
           </form>
+          )}
 
           {/* Switch Mode */}
           <div className="mt-6 text-center">
@@ -348,7 +624,7 @@ export default function AuthModal({ isOpen, onClose, onSuccess, initialMode = 'l
               {' '}
               <button
                 type="button"
-                onClick={switchMode}
+                onClick={handleModeSwitch}
                 className="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-medium transition-colors"
                 disabled={loading}
               >

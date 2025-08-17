@@ -5,6 +5,7 @@
 
 import { firebaseUserService } from './firebaseUserService';
 import { User, Notification } from '@/types/phase3';
+import { RecaptchaVerifier, ConfirmationResult } from 'firebase/auth';
 
 export class UserSystem {
   static async register(userData: {
@@ -26,6 +27,18 @@ export class UserSystem {
 
   static async loginWithGitHub(): Promise<{ success: boolean; user?: User; error?: string }> {
     return firebaseUserService.loginWithGitHub();
+  }
+
+  static async setupRecaptcha(elementId: string): Promise<RecaptchaVerifier> {
+    return firebaseUserService.setupRecaptcha(elementId);
+  }
+
+  static async sendPhoneVerification(phoneNumber: string, recaptchaVerifier: RecaptchaVerifier): Promise<{ success: boolean; confirmationResult?: ConfirmationResult; error?: string }> {
+    return firebaseUserService.sendPhoneVerification(phoneNumber, recaptchaVerifier);
+  }
+
+  static async verifyPhoneCode(confirmationResult: ConfirmationResult, code: string, userData?: { username: string; displayName: string }): Promise<{ success: boolean; user?: User; error?: string }> {
+    return firebaseUserService.verifyPhoneCode(confirmationResult, code, userData);
   }
 
   static async logout(): Promise<void> {

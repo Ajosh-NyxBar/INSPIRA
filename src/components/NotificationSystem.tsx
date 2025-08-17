@@ -76,9 +76,9 @@ export default function NotificationSystem({ currentUser, onNotificationClick }:
     setUnreadCount(0);
   };
 
-  const handleNotificationClick = async (notification: Notification) => {
+  const handleNotificationClick = (notification: Notification) => {
     if (!notification.read) {
-      await markAsRead(notification.id);
+      markAsRead(notification.id);
     }
     
     onNotificationClick?.(notification);
