@@ -1,13 +1,16 @@
-// Types untuk Quote dari Quotable API
+// Types untuk Quote dari Indonesian Quotes API
 export interface Quote {
-  _id: string;
-  content: string;
-  author: string;
-  tags: string[];
-  authorSlug: string;
-  length: number;
-  dateAdded?: string;
-  dateModified?: string;
+  id: string;           // Unique identifier for each quote
+  _id?: string;         // Legacy support for quotable format
+  content: string;      // Quote text content
+  author: string;       // Quote author name
+  tags: string[];       // Auto-generated or manual tags
+  authorSlug?: string;  // URL-friendly author name
+  length?: number;      // Character length of content
+  dateAdded?: string;   // When quote was added to system
+  dateModified?: string; // Last modification date
+  isFavorite?: boolean; // User's favorite status
+  viewCount?: number;   // How many times viewed
 }
 
 // Types untuk future features (Phase 2+)
