@@ -9,15 +9,20 @@ import Navigation from '@/components/Navigation';
 import CommunityFeed from '@/components/CommunityFeed';
 import CreateQuoteModal from '@/components/CreateQuoteModal';
 import UserProfile from '@/components/UserProfile';
+import AnalyticsDashboard from '@/components/AnalyticsDashboard';
 import { UserSystem } from '@/lib/userSystem';
 import { User, UserQuote } from '@/types/phase3';
+import { UserInsights } from '@/types/phase4';
+import AnalyticsService from '@/lib/analyticsService';
 
-type PageType = 'home' | 'favorites' | 'history' | 'categories' | 'community' | 'profile' | 'create';
+type PageType = 'home' | 'favorites' | 'history' | 'categories' | 'community' | 'profile' | 'create' | 'analytics';
 
 export default function Home() {
   const [currentPage, setCurrentPage] = useState<PageType>('home');
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [analyticsTimeRange, setAnalyticsTimeRange] = useState<'7d' | '30d' | '90d' | '1y'>('30d');
+  const [analyticsInsights, setAnalyticsInsights] = useState<UserInsights | null>(null);
 
   useEffect(() => {
     // Check for logged in user
@@ -32,6 +37,52 @@ export default function Home() {
       setCurrentPage('community');
     }
   }, [currentPage]);
+
+  useEffect(() => {
+    // Load analytics data when user is available
+    if (currentUser) {
+      const loadAnalytics = async () => {
+        try {
+          const analyticsInstance = AnalyticsService.getInstance();
+          const insights = analyticsInstance.generateUserInsights(currentUser.id, analyticsTimeRange);
+          setAnalyticsInsights(insights);
+        } catch (error) {
+          console.error('Error loading analytics:', error);
+          // Set default insights
+          setAnalyticsInsights({
+            userId: currentUser.id,
+            generatedAt: new Date().toISOString(),
+            timeRange: analyticsTimeRange,
+            stats: {
+              quotesViewed: 0,
+              favoriteQuotes: 0,
+              quotesShared: 0,
+              categoriesExplored: [],
+              activeHours: [],
+              activeDays: [],
+              avgSessionDuration: 0,
+              totalSessions: 0
+            },
+            preferences: {
+              favoriteCategories: [],
+              favoriteAuthors: [],
+              peakActivity: { hour: 12, day: 'Monday' },
+              preferredQuoteLength: 'medium',
+              moodTrend: []
+            },
+            recommendations: {
+              suggestedCategories: [],
+              suggestedAuthors: [],
+              suggestedUsers: [],
+              suggestedCommunities: [],
+              personalizedQuotes: []
+            }
+          });
+        }
+      };
+      loadAnalytics();
+    }
+  }, [currentUser, analyticsTimeRange]);
 
   const handleCreateQuoteSuccess = (quote: UserQuote) => {
     setShowCreateModal(false);
@@ -60,6 +111,60 @@ export default function Home() {
                 // TODO: Show quote detail modal
                 console.log('Quote clicked:', quote);
               }}
+            />
+          </div>
+        );
+      case 'analytics':
+        if (!currentUser) {
+          return (
+            <div className="max-w-4xl mx-auto p-6 text-center">
+              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-12">
+                <div className="text-6xl mb-4">📊</div>
+                <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-4">
+                  Analytics Dashboard
+                </h2>
+                <p className="text-gray-600 dark:text-gray-400">
+                  Anda harus login untuk melihat analytics
+                </p>
+              </div>
+            </div>
+          );
+        }
+        return (
+          <div className="max-w-4xl mx-auto p-6">
+            <AnalyticsDashboard 
+              userId={currentUser.id}
+              timeRange={analyticsTimeRange}
+              insights={analyticsInsights || {
+                userId: currentUser.id,
+                generatedAt: new Date().toISOString(),
+                timeRange: analyticsTimeRange,
+                stats: {
+                  quotesViewed: 0,
+                  favoriteQuotes: 0,
+                  quotesShared: 0,
+                  categoriesExplored: [],
+                  activeHours: [],
+                  activeDays: [],
+                  avgSessionDuration: 0,
+                  totalSessions: 0
+                },
+                preferences: {
+                  favoriteCategories: [],
+                  favoriteAuthors: [],
+                  peakActivity: { hour: 12, day: 'Monday' },
+                  preferredQuoteLength: 'medium',
+                  moodTrend: []
+                },
+                recommendations: {
+                  suggestedCategories: [],
+                  suggestedAuthors: [],
+                  suggestedUsers: [],
+                  suggestedCommunities: [],
+                  personalizedQuotes: []
+                }
+              }}
+              onTimeRangeChange={setAnalyticsTimeRange}
             />
           </div>
         );
