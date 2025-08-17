@@ -20,6 +20,14 @@ export class UserSystem {
     return firebaseUserService.login(email, password);
   }
 
+  static async loginWithGoogle(): Promise<{ success: boolean; user?: User; error?: string }> {
+    return firebaseUserService.loginWithGoogle();
+  }
+
+  static async loginWithGitHub(): Promise<{ success: boolean; user?: User; error?: string }> {
+    return firebaseUserService.loginWithGitHub();
+  }
+
   static async logout(): Promise<void> {
     return firebaseUserService.logout();
   }

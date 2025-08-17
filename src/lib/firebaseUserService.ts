@@ -6,6 +6,7 @@
 import { 
   createUserWithEmailAndPassword, 
   signInWithEmailAndPassword, 
+  signInWithPopup,
   signOut, 
   onAuthStateChanged,
   updateProfile,
@@ -27,7 +28,7 @@ import {
   serverTimestamp,
   onSnapshot
 } from 'firebase/firestore';
-import { auth, db } from './firebase';
+import { auth, db, googleProvider, githubProvider } from './firebase';
 import { User, Notification } from '@/types/phase3';
 
 // Demo mode for development without Firebase setup
@@ -135,6 +136,134 @@ class FirebaseUserService {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       await this.loadUserProfile(userCredential.user.uid);
       
+      return { success: true, user: this.currentUser! };
+    } catch (error: any) {
+      return { 
+        success: false, 
+        error: this.getErrorMessage(error.code) 
+      };
+    }
+  }
+
+  async loginWithGoogle(): Promise<{ success: boolean; user?: User; error?: string }> {
+    if (DEMO_MODE) {
+      return { success: false, error: 'OAuth tidak tersedia dalam mode demo' };
+    }
+
+    try {
+      const result = await signInWithPopup(auth, googleProvider);
+      const firebaseUser = result.user;
+      
+      // Check if user profile exists, if not create one
+      const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+      
+      if (!userDoc.exists()) {
+        // Create new user profile
+        const username = await this.generateUniqueUsername(firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'user');
+        
+        const newUser: User = {
+          id: firebaseUser.uid,
+          username,
+          email: firebaseUser.email || '',
+          displayName: firebaseUser.displayName || username,
+          avatar: firebaseUser.photoURL || undefined,
+          bio: '',
+          joinDate: new Date().toISOString(),
+          stats: {
+            quotesShared: 0,
+            favoriteCount: 0,
+            followersCount: 0,
+            followingCount: 0,
+            totalLikes: 0
+          },
+          preferences: {
+            theme: 'auto',
+            language: 'id',
+            notifications: {
+              newFollowers: true,
+              quoteLikes: true,
+              newQuotes: true
+            },
+            privacy: {
+              profilePublic: true,
+              showStats: true,
+              allowMessages: true
+            }
+          },
+          isVerified: false,
+          badges: []
+        };
+
+        await setDoc(doc(db, 'users', firebaseUser.uid), newUser);
+        this.currentUser = newUser;
+      } else {
+        await this.loadUserProfile(firebaseUser.uid);
+      }
+
+      return { success: true, user: this.currentUser! };
+    } catch (error: any) {
+      return { 
+        success: false, 
+        error: this.getErrorMessage(error.code) 
+      };
+    }
+  }
+
+  async loginWithGitHub(): Promise<{ success: boolean; user?: User; error?: string }> {
+    if (DEMO_MODE) {
+      return { success: false, error: 'OAuth tidak tersedia dalam mode demo' };
+    }
+
+    try {
+      const result = await signInWithPopup(auth, githubProvider);
+      const firebaseUser = result.user;
+      
+      // Check if user profile exists, if not create one
+      const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+      
+      if (!userDoc.exists()) {
+        // Create new user profile
+        const username = await this.generateUniqueUsername(firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'user');
+        
+        const newUser: User = {
+          id: firebaseUser.uid,
+          username,
+          email: firebaseUser.email || '',
+          displayName: firebaseUser.displayName || username,
+          avatar: firebaseUser.photoURL || undefined,
+          bio: '',
+          joinDate: new Date().toISOString(),
+          stats: {
+            quotesShared: 0,
+            favoriteCount: 0,
+            followersCount: 0,
+            followingCount: 0,
+            totalLikes: 0
+          },
+          preferences: {
+            theme: 'auto',
+            language: 'id',
+            notifications: {
+              newFollowers: true,
+              quoteLikes: true,
+              newQuotes: true
+            },
+            privacy: {
+              profilePublic: true,
+              showStats: true,
+              allowMessages: true
+            }
+          },
+          isVerified: false,
+          badges: []
+        };
+
+        await setDoc(doc(db, 'users', firebaseUser.uid), newUser);
+        this.currentUser = newUser;
+      } else {
+        await this.loadUserProfile(firebaseUser.uid);
+      }
+
       return { success: true, user: this.currentUser! };
     } catch (error: any) {
       return { 
@@ -345,6 +474,32 @@ class FirebaseUserService {
       console.error('Failed to check username:', error);
       return false;
     }
+  }
+
+  private async generateUniqueUsername(baseName: string): Promise<string> {
+    // Clean the base name (remove spaces, special chars, etc.)
+    let cleanBase = baseName
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '')
+      .substring(0, 15);
+    
+    if (!cleanBase) cleanBase = 'user';
+    
+    // Try the base name first
+    if (!(await this.checkUsernameExists(cleanBase))) {
+      return cleanBase;
+    }
+    
+    // If taken, try with numbers
+    for (let i = 1; i <= 999; i++) {
+      const candidate = `${cleanBase}${i}`;
+      if (!(await this.checkUsernameExists(candidate))) {
+        return candidate;
+      }
+    }
+    
+    // Fallback: use timestamp
+    return `${cleanBase}${Date.now()}`.substring(0, 20);
   }
 
   private getErrorMessage(errorCode: string): string {
