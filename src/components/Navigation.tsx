@@ -13,8 +13,8 @@ import NotificationSystem from './NotificationSystem';
 import AuthModal from './AuthModal';
 
 interface NavigationProps {
-  currentPage: 'home' | 'favorites' | 'history' | 'categories' | 'community' | 'profile' | 'create';
-  onPageChange: (page: 'home' | 'favorites' | 'history' | 'categories' | 'community' | 'profile' | 'create') => void;
+  currentPage: 'home' | 'favorites' | 'history' | 'categories' | 'community' | 'profile' | 'create' | 'analytics';
+  onPageChange: (page: 'home' | 'favorites' | 'history' | 'categories' | 'community' | 'profile' | 'create' | 'analytics') => void;
 }
 
 export default function Navigation({ currentPage, onPageChange }: NavigationProps) {
@@ -77,6 +77,13 @@ export default function Navigation({ currentPage, onPageChange }: NavigationProp
       icon: '✍️',
       description: 'Tulis quote inspiratif',
       badge: undefined
+    },
+    {
+      id: 'analytics' as const,
+      label: 'Analytics',
+      icon: '📊',
+      description: 'Insights & statistik',
+      badge: undefined
     }
   ];
 
@@ -84,7 +91,7 @@ export default function Navigation({ currentPage, onPageChange }: NavigationProp
 
   const handlePageChange = (page: typeof currentPage) => {
     // Redirect to auth if trying to access social features without login
-    if (!currentUser && ['community', 'create', 'profile'].includes(page)) {
+    if (!currentUser && ['community', 'create', 'profile', 'analytics'].includes(page)) {
       setShowAuthModal(true);
       return;
     }
