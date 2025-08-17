@@ -6,9 +6,13 @@
 import { 
   createUserWithEmailAndPassword, 
   signInWithEmailAndPassword, 
+  signInWithPopup,
+  signInWithPhoneNumber,
   signOut, 
   onAuthStateChanged,
   updateProfile,
+  RecaptchaVerifier,
+  ConfirmationResult,
   User as FirebaseUser
 } from 'firebase/auth';
 import { 
@@ -27,7 +31,7 @@ import {
   serverTimestamp,
   onSnapshot
 } from 'firebase/firestore';
-import { auth, db } from './firebase';
+import { auth, db, googleProvider, githubProvider } from './firebase';
 import { User, Notification } from '@/types/phase3';
 
 // Demo mode for development without Firebase setup
@@ -135,6 +139,242 @@ class FirebaseUserService {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       await this.loadUserProfile(userCredential.user.uid);
       
+      return { success: true, user: this.currentUser! };
+    } catch (error: any) {
+      return { 
+        success: false, 
+        error: this.getErrorMessage(error.code) 
+      };
+    }
+  }
+
+  async loginWithGoogle(): Promise<{ success: boolean; user?: User; error?: string }> {
+    if (DEMO_MODE) {
+      return { success: false, error: 'OAuth tidak tersedia dalam mode demo' };
+    }
+
+    try {
+      const result = await signInWithPopup(auth, googleProvider);
+      const firebaseUser = result.user;
+      
+      // Check if user profile exists, if not create one
+      const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+      
+      if (!userDoc.exists()) {
+        // Create new user profile
+        const username = await this.generateUniqueUsername(firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'user');
+        
+        const newUser: User = {
+          id: firebaseUser.uid,
+          username,
+          email: firebaseUser.email || '',
+          displayName: firebaseUser.displayName || username,
+          avatar: firebaseUser.photoURL || undefined,
+          bio: '',
+          joinDate: new Date().toISOString(),
+          stats: {
+            quotesShared: 0,
+            favoriteCount: 0,
+            followersCount: 0,
+            followingCount: 0,
+            totalLikes: 0
+          },
+          preferences: {
+            theme: 'auto',
+            language: 'id',
+            notifications: {
+              newFollowers: true,
+              quoteLikes: true,
+              newQuotes: true
+            },
+            privacy: {
+              profilePublic: true,
+              showStats: true,
+              allowMessages: true
+            }
+          },
+          isVerified: false,
+          badges: []
+        };
+
+        await setDoc(doc(db, 'users', firebaseUser.uid), newUser);
+        this.currentUser = newUser;
+      } else {
+        await this.loadUserProfile(firebaseUser.uid);
+      }
+
+      return { success: true, user: this.currentUser! };
+    } catch (error: any) {
+      return { 
+        success: false, 
+        error: this.getErrorMessage(error.code) 
+      };
+    }
+  }
+
+  async loginWithGitHub(): Promise<{ success: boolean; user?: User; error?: string }> {
+    if (DEMO_MODE) {
+      return { success: false, error: 'OAuth tidak tersedia dalam mode demo' };
+    }
+
+    try {
+      const result = await signInWithPopup(auth, githubProvider);
+      const firebaseUser = result.user;
+      
+      // Check if user profile exists, if not create one
+      const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+      
+      if (!userDoc.exists()) {
+        // Create new user profile
+        const username = await this.generateUniqueUsername(firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'user');
+        
+        const newUser: User = {
+          id: firebaseUser.uid,
+          username,
+          email: firebaseUser.email || '',
+          displayName: firebaseUser.displayName || username,
+          avatar: firebaseUser.photoURL || undefined,
+          bio: '',
+          joinDate: new Date().toISOString(),
+          stats: {
+            quotesShared: 0,
+            favoriteCount: 0,
+            followersCount: 0,
+            followingCount: 0,
+            totalLikes: 0
+          },
+          preferences: {
+            theme: 'auto',
+            language: 'id',
+            notifications: {
+              newFollowers: true,
+              quoteLikes: true,
+              newQuotes: true
+            },
+            privacy: {
+              profilePublic: true,
+              showStats: true,
+              allowMessages: true
+            }
+          },
+          isVerified: false,
+          badges: []
+        };
+
+        await setDoc(doc(db, 'users', firebaseUser.uid), newUser);
+        this.currentUser = newUser;
+      } else {
+        await this.loadUserProfile(firebaseUser.uid);
+      }
+
+      return { success: true, user: this.currentUser! };
+    } catch (error: any) {
+      return { 
+        success: false, 
+        error: this.getErrorMessage(error.code) 
+      };
+    }
+  }
+
+  async setupRecaptcha(elementId: string): Promise<RecaptchaVerifier> {
+    if (DEMO_MODE) {
+      throw new Error('Phone authentication tidak tersedia dalam mode demo');
+    }
+
+    const recaptchaVerifier = new RecaptchaVerifier(auth, elementId, {
+      size: 'invisible',
+      callback: () => {
+        // reCAPTCHA solved
+      },
+      'expired-callback': () => {
+        // Response expired. Ask user to solve reCAPTCHA again.
+      }
+    });
+
+    return recaptchaVerifier;
+  }
+
+  async sendPhoneVerification(phoneNumber: string, recaptchaVerifier: RecaptchaVerifier): Promise<{ success: boolean; confirmationResult?: ConfirmationResult; error?: string }> {
+    if (DEMO_MODE) {
+      return { success: false, error: 'Phone authentication tidak tersedia dalam mode demo' };
+    }
+
+    try {
+      const confirmationResult = await signInWithPhoneNumber(auth, phoneNumber, recaptchaVerifier);
+      return { success: true, confirmationResult };
+    } catch (error: any) {
+      return { 
+        success: false, 
+        error: this.getErrorMessage(error.code) 
+      };
+    }
+  }
+
+  async verifyPhoneCode(confirmationResult: ConfirmationResult, code: string, userData?: { username: string; displayName: string }): Promise<{ success: boolean; user?: User; error?: string }> {
+    if (DEMO_MODE) {
+      return { success: false, error: 'Phone authentication tidak tersedia dalam mode demo' };
+    }
+
+    try {
+      const result = await confirmationResult.confirm(code);
+      const firebaseUser = result.user;
+
+      // Check if user profile exists, if not create one
+      const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+      
+      if (!userDoc.exists()) {
+        // Create new user profile for phone authentication
+        let username = firebaseUser.phoneNumber?.replace(/[^\d]/g, '') || 'user';
+        let displayName = firebaseUser.phoneNumber || 'User';
+
+        // Use provided userData if available (from registration)
+        if (userData) {
+          username = userData.username;
+          displayName = userData.displayName;
+        } else {
+          // Generate username from phone number
+          username = await this.generateUniqueUsername(username);
+        }
+        
+        const newUser: User = {
+          id: firebaseUser.uid,
+          username,
+          email: '',
+          displayName,
+          avatar: undefined,
+          bio: '',
+          joinDate: new Date().toISOString(),
+          stats: {
+            quotesShared: 0,
+            favoriteCount: 0,
+            followersCount: 0,
+            followingCount: 0,
+            totalLikes: 0
+          },
+          preferences: {
+            theme: 'auto',
+            language: 'id',
+            notifications: {
+              newFollowers: true,
+              quoteLikes: true,
+              newQuotes: true
+            },
+            privacy: {
+              profilePublic: true,
+              showStats: true,
+              allowMessages: true
+            }
+          },
+          isVerified: false,
+          badges: []
+        };
+
+        await setDoc(doc(db, 'users', firebaseUser.uid), newUser);
+        this.currentUser = newUser;
+      } else {
+        await this.loadUserProfile(firebaseUser.uid);
+      }
+
       return { success: true, user: this.currentUser! };
     } catch (error: any) {
       return { 
@@ -345,6 +585,32 @@ class FirebaseUserService {
       console.error('Failed to check username:', error);
       return false;
     }
+  }
+
+  private async generateUniqueUsername(baseName: string): Promise<string> {
+    // Clean the base name (remove spaces, special chars, etc.)
+    let cleanBase = baseName
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '')
+      .substring(0, 15);
+    
+    if (!cleanBase) cleanBase = 'user';
+    
+    // Try the base name first
+    if (!(await this.checkUsernameExists(cleanBase))) {
+      return cleanBase;
+    }
+    
+    // If taken, try with numbers
+    for (let i = 1; i <= 999; i++) {
+      const candidate = `${cleanBase}${i}`;
+      if (!(await this.checkUsernameExists(candidate))) {
+        return candidate;
+      }
+    }
+    
+    // Fallback: use timestamp
+    return `${cleanBase}${Date.now()}`.substring(0, 20);
   }
 
   private getErrorMessage(errorCode: string): string {
