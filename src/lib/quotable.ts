@@ -23,7 +23,8 @@ export class QuotesIndonesiaAPI {
     
     // Transform data to match our Quote interface
     this.quotesCache = data.map((item: any, index: number) => ({
-      _id: `quote-${index}`,
+      id: `quote-${index}`, // Unique identifier for each quote
+      _id: `quote-${index}`, // Legacy support
       content: item.quote,
       author: item.by,
       tags: this.extractTagsFromContent(item.quote),
@@ -31,6 +32,7 @@ export class QuotesIndonesiaAPI {
       length: item.quote.length,
       dateAdded: new Date().toISOString(),
       dateModified: new Date().toISOString(),
+      viewCount: 0
     }));
     
     return this.quotesCache as Quote[];
@@ -163,6 +165,26 @@ export class QuotesIndonesiaAPI {
     return Object.entries(tagCounts)
       .map(([name, quoteCount]) => ({ name, quoteCount }))
       .sort((a, b) => b.quoteCount - a.quoteCount);
+  }
+
+  /**
+   * Get quotes by tags/categories
+   */
+  static async getQuotesByTags(tags: string[], limit: number = 10): Promise<Quote[]> {
+    const allQuotes = await this.fetchAllQuotes();
+    const filteredQuotes = allQuotes.filter(quote =>
+      tags.some(tag => quote.tags.some(quoteTag => 
+        quoteTag.toLowerCase().includes(tag.toLowerCase())
+      ))
+    );
+    return filteredQuotes.slice(0, limit);
+  }
+
+  /**
+   * Get all quotes (public access)
+   */
+  static async getAllQuotes(): Promise<Quote[]> {
+    return await this.fetchAllQuotes();
   }
 
   /**

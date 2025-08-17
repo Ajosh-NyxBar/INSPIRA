@@ -3,6 +3,9 @@
 import { useState, useEffect } from 'react';
 import { Quote } from '@/types';
 import { QuotableAPI } from '@/lib/quotable';
+import { addToHistory, recordVisit } from '@/lib/localStorage';
+import FavoriteButton from './FavoriteButton';
+import ShareButton from './ShareButton';
 
 export default function QuoteCard() {
   const [quote, setQuote] = useState<Quote | null>(null);
@@ -15,6 +18,12 @@ export default function QuoteCard() {
       setError(null);
       const data = await QuotableAPI.getRandomQuote();
       setQuote(data);
+      
+      // Add to history and record visit
+      if (data) {
+        addToHistory(data);
+        recordVisit();
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong');
     } finally {
@@ -59,6 +68,20 @@ export default function QuoteCard() {
     <div className="max-w-2xl mx-auto p-8 bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700">
       {quote && (
         <>
+          {/* Quote Actions Bar */}
+          <div className="flex justify-between items-center mb-6">
+            <div className="flex items-center gap-3">
+              <FavoriteButton quote={quote} size="md" />
+              <ShareButton quote={quote} size="md" />
+            </div>
+            <div className="flex items-center gap-2 text-xs text-gray-500">
+              <span>#{quote.id.split('-')[1]}</span>
+              {quote.tags.length > 0 && (
+                <span>• {quote.tags.length} tags</span>
+              )}
+            </div>
+          </div>
+
           <blockquote className="text-lg md:text-xl text-gray-800 dark:text-gray-200 leading-relaxed mb-6 italic">
             "{quote.content}"
           </blockquote>
@@ -72,7 +95,8 @@ export default function QuoteCard() {
               {quote.tags.map((tag) => (
                 <span
                   key={tag}
-                  className="px-2 py-1 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 rounded-full"
+                  className="px-2 py-1 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 rounded-full cursor-pointer hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors"
+                  title={`Filter berdasarkan ${tag}`}
                 >
                   {tag}
                 </span>
