@@ -447,6 +447,96 @@ class FirebaseUserService {
     return { success: true, user: demoUser };
   }
 
+  async getFollowers(userId: string): Promise<User[]> {
+    if (DEMO_MODE) {
+      // Return demo followers
+      return [
+        {
+          id: 'demo_follower_1',
+          username: 'follower1',
+          email: 'follower1@demo.com',
+          displayName: 'Demo Follower 1',
+          joinDate: new Date().toISOString(),
+          stats: { quotesShared: 1, favoriteCount: 2, followersCount: 3, followingCount: 4, totalLikes: 5 },
+          preferences: { theme: 'auto', language: 'id', notifications: { newFollowers: true, quoteLikes: true, newQuotes: true }, privacy: { profilePublic: true, showStats: true, allowMessages: true } },
+          isVerified: false,
+          badges: []
+        }
+      ];
+    }
+
+    try {
+      const userDoc = await getDoc(doc(db, 'users', userId));
+      if (!userDoc.exists()) return [];
+
+      const userData = userDoc.data();
+      const followerIds = userData.followers || [];
+
+      if (followerIds.length === 0) return [];
+
+      const followerPromises = followerIds.map((id: string) => this.getUserById(id));
+      const followers = await Promise.all(followerPromises);
+      return followers.filter((user): user is User => user !== null);
+    } catch (error) {
+      console.error('Error getting followers:', error);
+      return [];
+    }
+  }
+
+  async getFollowing(userId: string): Promise<User[]> {
+    if (DEMO_MODE) {
+      // Return demo following
+      return [
+        {
+          id: 'demo_following_1',
+          username: 'following1',
+          email: 'following1@demo.com',
+          displayName: 'Demo Following 1',
+          joinDate: new Date().toISOString(),
+          stats: { quotesShared: 2, favoriteCount: 3, followersCount: 4, followingCount: 5, totalLikes: 6 },
+          preferences: { theme: 'auto', language: 'id', notifications: { newFollowers: true, quoteLikes: true, newQuotes: true }, privacy: { profilePublic: true, showStats: true, allowMessages: true } },
+          isVerified: false,
+          badges: []
+        }
+      ];
+    }
+
+    try {
+      const userDoc = await getDoc(doc(db, 'users', userId));
+      if (!userDoc.exists()) return [];
+
+      const userData = userDoc.data();
+      const followingIds = userData.following || [];
+
+      if (followingIds.length === 0) return [];
+
+      const followingPromises = followingIds.map((id: string) => this.getUserById(id));
+      const following = await Promise.all(followingPromises);
+      return following.filter((user): user is User => user !== null);
+    } catch (error) {
+      console.error('Error getting following:', error);
+      return [];
+    }
+  }
+
+  async isFollowing(userId: string, targetUserId: string): Promise<boolean> {
+    if (DEMO_MODE) {
+      return false; // Default demo behavior
+    }
+
+    try {
+      const userDoc = await getDoc(doc(db, 'users', userId));
+      if (!userDoc.exists()) return false;
+
+      const userData = userDoc.data();
+      const following = userData.following || [];
+      return following.includes(targetUserId);
+    } catch (error) {
+      console.error('Error checking if following:', error);
+      return false;
+    }
+  }
+
   destroy(): void {
     if (this.authUnsubscribe) {
       this.authUnsubscribe();

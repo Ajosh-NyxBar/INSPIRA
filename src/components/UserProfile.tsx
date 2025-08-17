@@ -6,7 +6,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { User } from '@/types/phase3';
+import { User, UserQuote } from '@/types/phase3';
 import { UserSystem } from '@/lib/userSystem';
 import { UserQuoteSystem } from '@/lib/userQuoteSystem';
 
@@ -22,6 +22,12 @@ export default function UserProfile({ userId, onClose }: UserProfileProps) {
   const [isFollowing, setIsFollowing] = useState(false);
   const [followLoading, setFollowLoading] = useState(false);
   
+  // Data states
+  const [userQuotes, setUserQuotes] = useState<UserQuote[]>([]);
+  const [followers, setFollowers] = useState<User[]>([]);
+  const [following, setFollowing] = useState<User[]>([]);
+  const [dataLoading, setDataLoading] = useState(false);
+  
   // Tabs
   const [activeTab, setActiveTab] = useState<'quotes' | 'followers' | 'following'>('quotes');
 
@@ -29,17 +35,46 @@ export default function UserProfile({ userId, onClose }: UserProfileProps) {
     loadUserProfile();
   }, [userId]);
 
+  useEffect(() => {
+    if (user) {
+      loadUserData();
+    }
+  }, [user]);
+
+  const loadUserData = async () => {
+    if (!user) return;
+    
+    setDataLoading(true);
+    try {
+      const isOwnProfile = currentUser && currentUser.id === user.id;
+      const [quotesData, followersData, followingData] = await Promise.all([
+        UserQuoteSystem.getQuotesByUser(user.id, !!isOwnProfile),
+        UserSystem.getFollowers(user.id),
+        UserSystem.getFollowing(user.id)
+      ]);
+      
+      setUserQuotes(quotesData);
+      setFollowers(followersData);
+      setFollowing(followingData);
+    } catch (error) {
+      console.error('Error loading user data:', error);
+    } finally {
+      setDataLoading(false);
+    }
+  };
+
   const loadUserProfile = async () => {
     setLoading(true);
     
-    const profileUser = UserSystem.getUserById(userId);
+    const profileUser = await UserSystem.getUserById(userId);
     const current = UserSystem.getCurrentUser();
     
     setUser(profileUser);
     setCurrentUser(current);
     
     if (current && profileUser) {
-      setIsFollowing(UserSystem.isFollowing(current.id, userId));
+      const following = await UserSystem.getFollowing(current.id);
+      setIsFollowing(following.some((u: User) => u.id === userId));
     }
     
     setLoading(false);
@@ -52,10 +87,10 @@ export default function UserProfile({ userId, onClose }: UserProfileProps) {
     
     try {
       if (isFollowing) {
-        UserSystem.unfollowUser(currentUser.id, user.id);
+        await UserSystem.unfollowUser(user.id);
         setIsFollowing(false);
       } else {
-        UserSystem.followUser(currentUser.id, user.id);
+        await UserSystem.followUser(user.id);
         setIsFollowing(true);
       }
       
@@ -117,9 +152,6 @@ export default function UserProfile({ userId, onClose }: UserProfileProps) {
   }
 
   const isOwnProfile = currentUser && currentUser.id === user.id;
-  const userQuotes = UserQuoteSystem.getQuotesByUser(user.id, !!isOwnProfile);
-  const followers = UserSystem.getFollowers(user.id);
-  const following = UserSystem.getFollowing(user.id);
 
   return (
     <div className="max-w-4xl mx-auto p-6">

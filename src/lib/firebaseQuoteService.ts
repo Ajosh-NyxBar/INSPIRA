@@ -139,18 +139,24 @@ class FirebaseQuoteService {
     }
   }
 
-  async getUserQuotes(userId: string): Promise<UserQuote[]> {
+  async getUserQuotes(userId: string, includePrivate: boolean = false): Promise<UserQuote[]> {
     if (DEMO_MODE) {
-      return this.demoQuotes.filter(q => q.userId === userId);
+      return this.demoQuotes.filter(q => q.userId === userId && (includePrivate || q.isPublic));
     }
 
     try {
-      const q = query(
-        collection(db, 'quotes'),
+      let constraints = [
         where('userId', '==', userId),
         where('status', '==', 'active'),
         orderBy('createdAt', 'desc')
-      );
+      ];
+
+      // If not including private, filter by public only
+      if (!includePrivate) {
+        constraints.splice(2, 0, where('isPublic', '==', true));
+      }
+
+      const q = query(collection(db, 'quotes'), ...constraints);
 
       const querySnapshot = await getDocs(q);
       return querySnapshot.docs.map(doc => ({

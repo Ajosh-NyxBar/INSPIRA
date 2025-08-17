@@ -48,10 +48,10 @@ export default function NotificationSystem({ currentUser, onNotificationClick }:
     }
   };
 
-  const markAsRead = (notificationId: string) => {
+  const markAsRead = async (notificationId: string) => {
     if (!currentUser) return;
     
-    const result = UserSystem.markNotificationRead(notificationId);
+    const result = await UserSystem.markNotificationRead(notificationId);
     if (result) {
       setNotifications(prev => 
         prev.map(notification => 
@@ -76,9 +76,9 @@ export default function NotificationSystem({ currentUser, onNotificationClick }:
     setUnreadCount(0);
   };
 
-  const handleNotificationClick = (notification: Notification) => {
+  const handleNotificationClick = async (notification: Notification) => {
     if (!notification.read) {
-      markAsRead(notification.id);
+      await markAsRead(notification.id);
     }
     
     onNotificationClick?.(notification);

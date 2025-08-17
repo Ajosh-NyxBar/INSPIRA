@@ -55,8 +55,4 @@ export class UserQuoteSystem {
     // Get trending quotes as recommendations
     return firebaseQuoteService.getTrendingQuotes();
   }
-
-  static async getQuotesByUser(userId: string, includePrivate: boolean = false): Promise<UserQuote[]> {
-    return firebaseQuoteService.getUserQuotes(userId, includePrivate);
-  }
 }

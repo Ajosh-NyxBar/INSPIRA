@@ -102,7 +102,7 @@ export default function CreateQuoteModal({ isOpen, onClose, onSuccess }: CreateQ
     setError(null);
     
     try {
-      const result = UserQuoteSystem.createQuote({
+      const result = await UserQuoteSystem.createQuote({
         content: formData.content.trim(),
         author: formData.author.trim(),
         tags: formData.tags,

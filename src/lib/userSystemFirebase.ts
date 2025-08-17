@@ -57,16 +57,4 @@ export class UserSystem {
   static async createNotification(notification: Omit<Notification, 'id'>): Promise<void> {
     return firebaseUserService.createNotification(notification);
   }
-
-  static async getFollowers(userId: string): Promise<User[]> {
-    return firebaseUserService.getFollowers(userId);
-  }
-
-  static async getFollowing(userId: string): Promise<User[]> {
-    return firebaseUserService.getFollowing(userId);
-  }
-
-  static async isFollowing(userId: string, targetUserId: string): Promise<boolean> {
-    return firebaseUserService.isFollowing(userId, targetUserId);
-  }
 }
