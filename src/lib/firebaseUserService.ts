@@ -35,7 +35,21 @@ import { auth, db, googleProvider, githubProvider } from './firebase';
 import { User, Notification } from '@/types/phase3';
 
 // Demo mode for development without Firebase setup
-const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === 'true';
+const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === 'true' || 
+                  process.env.NEXT_PUBLIC_FIREBASE_API_KEY === 'AIzaSyDYourActualAPIKeyHere' ||
+                  !process.env.NEXT_PUBLIC_FIREBASE_API_KEY ||
+                  process.env.NEXT_PUBLIC_FIREBASE_API_KEY?.includes('YourActual');
+
+console.log('👤 UserService Debug Info:');
+console.log('- DEMO_MODE:', DEMO_MODE);
+console.log('- Auth available:', !!auth);
+console.log('- DB available:', !!db);
+
+if (DEMO_MODE) {
+  console.log('🚀 UserService running in DEMO MODE');
+} else {
+  console.log('🔥 UserService running with Firebase');
+}
 
 class FirebaseUserService {
   private currentUser: User | null = null;
@@ -48,6 +62,8 @@ class FirebaseUserService {
   }
 
   private initializeAuth() {
+    if (!auth) return; // Skip if auth is not initialized
+    
     this.authUnsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         await this.loadUserProfile(firebaseUser.uid);
@@ -65,6 +81,10 @@ class FirebaseUserService {
   }): Promise<{ success: boolean; user?: User; error?: string }> {
     if (DEMO_MODE) {
       return this.demoRegister(userData);
+    }
+
+    if (!auth || !db) {
+      return { success: false, error: 'Layanan Firebase tidak tersedia' };
     }
 
     try {
@@ -135,6 +155,10 @@ class FirebaseUserService {
       return this.demoLogin(email, password);
     }
 
+    if (!auth) {
+      return { success: false, error: 'Layanan autentikasi tidak tersedia' };
+    }
+
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       await this.loadUserProfile(userCredential.user.uid);
@@ -151,6 +175,10 @@ class FirebaseUserService {
   async loginWithGoogle(): Promise<{ success: boolean; user?: User; error?: string }> {
     if (DEMO_MODE) {
       return { success: false, error: 'OAuth tidak tersedia dalam mode demo' };
+    }
+
+    if (!googleProvider || !auth) {
+      return { success: false, error: 'Google provider tidak tersedia' };
     }
 
     try {
@@ -217,6 +245,10 @@ class FirebaseUserService {
       return { success: false, error: 'OAuth tidak tersedia dalam mode demo' };
     }
 
+    if (!githubProvider || !auth) {
+      return { success: false, error: 'GitHub provider tidak tersedia' };
+    }
+
     try {
       const result = await signInWithPopup(auth, githubProvider);
       const firebaseUser = result.user;
@@ -281,17 +313,30 @@ class FirebaseUserService {
       throw new Error('Phone authentication tidak tersedia dalam mode demo');
     }
 
-    const recaptchaVerifier = new RecaptchaVerifier(auth, elementId, {
-      size: 'invisible',
-      callback: () => {
-        // reCAPTCHA solved
-      },
-      'expired-callback': () => {
-        // Response expired. Ask user to solve reCAPTCHA again.
-      }
-    });
+    if (!auth) {
+      throw new Error('Firebase Auth tidak tersedia');
+    }
 
-    return recaptchaVerifier;
+    try {
+      const recaptchaVerifier = new RecaptchaVerifier(auth, elementId, {
+        size: 'normal', // Changed from 'invisible' to 'normal' for better compatibility
+        callback: (response: any) => {
+          console.log('reCAPTCHA solved:', response);
+        },
+        'expired-callback': () => {
+          console.warn('reCAPTCHA expired, user needs to solve again');
+        }
+      });
+
+      // Render the reCAPTCHA to check if it's working
+      await recaptchaVerifier.render();
+      console.log('✅ reCAPTCHA setup successful');
+      
+      return recaptchaVerifier;
+    } catch (error: any) {
+      console.error('❌ reCAPTCHA setup failed:', error);
+      throw new Error(`reCAPTCHA setup gagal: ${error.message}. Pastikan phone authentication sudah diaktifkan di Firebase Console.`);
+    }
   }
 
   async sendPhoneVerification(phoneNumber: string, recaptchaVerifier: RecaptchaVerifier): Promise<{ success: boolean; confirmationResult?: ConfirmationResult; error?: string }> {
@@ -299,13 +344,49 @@ class FirebaseUserService {
       return { success: false, error: 'Phone authentication tidak tersedia dalam mode demo' };
     }
 
+    if (!auth) {
+      return { success: false, error: 'Firebase Auth tidak tersedia' };
+    }
+
     try {
+      console.log('📱 Sending phone verification to:', phoneNumber);
       const confirmationResult = await signInWithPhoneNumber(auth, phoneNumber, recaptchaVerifier);
+      console.log('✅ Phone verification sent successfully');
       return { success: true, confirmationResult };
     } catch (error: any) {
+      console.error('❌ Phone verification failed:', error);
+      
+      if (error.code === 'auth/billing-not-enabled') {
+        return { 
+          success: false, 
+          error: 'Phone authentication memerlukan billing aktif di Firebase. Gunakan email/Google/GitHub login sebagai alternatif.' 
+        };
+      }
+      
+      if (error.code === 'auth/captcha-check-failed') {
+        return { 
+          success: false, 
+          error: 'Verifikasi reCAPTCHA gagal. Silakan coba lagi.' 
+        };
+      }
+      
+      if (error.code === 'auth/invalid-phone-number') {
+        return { 
+          success: false, 
+          error: 'Format nomor telepon tidak valid. Gunakan format internasional (contoh: +6281234567890)' 
+        };
+      }
+      
+      if (error.code === 'auth/too-many-requests') {
+        return { 
+          success: false, 
+          error: 'Terlalu banyak percobaan. Silakan coba lagi dalam beberapa menit.' 
+        };
+      }
+      
       return { 
         success: false, 
-        error: this.getErrorMessage(error.code) 
+        error: `Gagal mengirim kode verifikasi: ${this.getErrorMessage(error.code)}` 
       };
     }
   }
