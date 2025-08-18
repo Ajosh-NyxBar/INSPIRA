@@ -644,17 +644,55 @@ class FirebaseUserService {
 
   private async loadUserProfile(uid: string): Promise<void> {
     try {
+      if (!db) {
+        console.warn('Database not available, skipping profile load');
+        return;
+      }
+      
       const userDoc = await getDoc(doc(db, 'users', uid));
       if (userDoc.exists()) {
         this.currentUser = userDoc.data() as User;
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to load user profile:', error);
+      
+      // Handle offline errors gracefully
+      if (error?.code === 'failed-precondition' || 
+          error?.message?.includes('offline') || 
+          error?.message?.includes('client is offline')) {
+        console.log('🔄 Client is offline, profile will be loaded when connection is restored');
+        return;
+      }
+      
+      // Handle WebChannel connection errors
+      if (error?.message?.includes('400') || 
+          error?.message?.includes('Bad Request') ||
+          error?.message?.includes('WebChannelConnection')) {
+        console.log('🌐 Connection error, will retry when network is stable');
+        return;
+      }
+      
+      // Handle other Firebase errors
+      if (error?.code === 'permission-denied') {
+        console.warn('🔒 Permission denied accessing user profile. Check Firestore rules.');
+        return;
+      }
+      
+      // Handle unavailable service
+      if (error?.code === 'unavailable') {
+        console.log('📡 Firebase service temporarily unavailable');
+        return;
+      }
     }
   }
 
   private async checkUsernameExists(username: string): Promise<boolean> {
     try {
+      if (!db) {
+        console.warn('Database not available, skipping username check');
+        return false;
+      }
+      
       const q = query(
         collection(db, 'users'),
         where('username', '==', username),
@@ -662,8 +700,17 @@ class FirebaseUserService {
       );
       const querySnapshot = await getDocs(q);
       return !querySnapshot.empty;
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to check username:', error);
+      
+      // Handle offline errors
+      if (error?.code === 'failed-precondition' || 
+          error?.message?.includes('offline') || 
+          error?.message?.includes('client is offline')) {
+        console.warn('🔄 Client is offline, username check skipped');
+        return false;
+      }
+      
       return false;
     }
   }
