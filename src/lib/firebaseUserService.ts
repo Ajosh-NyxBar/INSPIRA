@@ -644,17 +644,166 @@ class FirebaseUserService {
 
   private async loadUserProfile(uid: string): Promise<void> {
     try {
-      const userDoc = await getDoc(doc(db, 'users', uid));
-      if (userDoc.exists()) {
-        this.currentUser = userDoc.data() as User;
+      if (!db) {
+        console.warn('Database not available, skipping profile load');
+        return;
       }
+      
+      // First try normal Firestore with shorter timeout
+      try {
+        console.log('📱 Attempting to load profile via Firestore...');
+        const profilePromise = getDoc(doc(db, 'users', uid));
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Firestore timeout')), 5000)
+        );
+        
+        const userDoc = await Promise.race([profilePromise, timeoutPromise]) as any;
+        
+        if (userDoc.exists()) {
+          this.currentUser = userDoc.data() as User;
+          console.log('✅ User profile loaded via Firestore');
+          return;
+        }
+      } catch (firestoreError: any) {
+        console.log('⚠️ Firestore failed, trying REST API fallback:', firestoreError?.message);
+        
+        // Fallback to REST API
+        try {
+          const { firebaseRestClient } = await import('./firebaseRestApi');
+          const userData = await firebaseRestClient.getDocument('users', uid);
+          
+          if (userData) {
+            this.currentUser = userData as User;
+            console.log('✅ User profile loaded via REST API');
+            return;
+          } else {
+            console.log('� User profile not found, creating default profile');
+            await this.createDefaultUserProfile(uid);
+            return;
+          }
+        } catch (restError: any) {
+          console.warn('⚠️ REST API also failed:', restError?.message);
+        }
+      }
+      
+      // If both methods fail, create default profile
+      console.log('📄 Creating default profile due to connection issues');
+      await this.createDefaultUserProfile(uid);
+      
+    } catch (error: any) {
+      console.log('❌ Critical error in loadUserProfile:', error?.message || error);
+      
+      // Last resort: create minimal profile
+      this.currentUser = {
+        id: uid,
+        username: `user_${uid.slice(0, 8)}`,
+        email: auth?.currentUser?.email || '',
+        displayName: auth?.currentUser?.displayName || 'User',
+        joinDate: new Date().toISOString(),
+        stats: { quotesShared: 0, favoriteCount: 0, followersCount: 0, followingCount: 0, totalLikes: 0 },
+        preferences: {
+          theme: 'light' as const,
+          language: 'en' as const,
+          notifications: { newFollowers: true, quoteLikes: true, newQuotes: true },
+          privacy: { profilePublic: true, showStats: true, allowMessages: true }
+        },
+        isVerified: false,
+        badges: []
+      };
+      console.log('🚑 Created emergency fallback profile');
+    }
+  }
+
+  private async createDefaultUserProfile(uid: string): Promise<void> {
+    try {
+      if (!auth?.currentUser) return;
+      
+      const defaultProfile: Partial<User> = {
+        id: uid,
+        email: auth.currentUser.email || '',
+        username: auth.currentUser.displayName || `user_${uid.slice(0, 8)}`,
+        displayName: auth.currentUser.displayName || 'Anonymous User',
+        avatar: auth.currentUser.photoURL || '',
+        bio: '',
+        joinDate: new Date().toISOString(),
+        stats: {
+          quotesShared: 0,
+          favoriteCount: 0,
+          followersCount: 0,
+          followingCount: 0,
+          totalLikes: 0
+        },
+        preferences: {
+          theme: 'light' as const,
+          language: 'en' as const,
+          notifications: {
+            newFollowers: true,
+            quoteLikes: true,
+            newQuotes: true
+          },
+          privacy: {
+            profilePublic: true,
+            showStats: true,
+            allowMessages: true
+          }
+        },
+        isVerified: false,
+        badges: []
+      };
+
+      // Try Firestore first
+      if (db) {
+        try {
+          await setDoc(doc(db, 'users', uid), defaultProfile, { merge: true });
+          console.log('✅ Default user profile created via Firestore');
+        } catch (firestoreError) {
+          console.log('⚠️ Firestore failed, trying REST API for profile creation');
+          
+          // Fallback to REST API
+          try {
+            const { firebaseRestClient } = await import('./firebaseRestApi');
+            await firebaseRestClient.setDocument('users', uid, defaultProfile, true);
+            console.log('✅ Default user profile created via REST API');
+          } catch (restError) {
+            console.warn('⚠️ Both Firestore and REST failed for profile creation:', restError);
+          }
+        }
+      }
+      
+      // Set in memory regardless of storage success
+      this.currentUser = defaultProfile as User;
+      console.log('📱 Default profile set in memory');
+      
     } catch (error) {
-      console.error('Failed to load user profile:', error);
+      console.warn('❌ Failed to create default profile:', error);
+      
+      // Emergency fallback - at least set something in memory
+      this.currentUser = {
+        id: uid,
+        username: `user_${uid.slice(0, 8)}`,
+        email: auth?.currentUser?.email || '',
+        displayName: 'User',
+        joinDate: new Date().toISOString(),
+        stats: { quotesShared: 0, favoriteCount: 0, followersCount: 0, followingCount: 0, totalLikes: 0 },
+        preferences: {
+          theme: 'light' as const,
+          language: 'en' as const,
+          notifications: { newFollowers: true, quoteLikes: true, newQuotes: true },
+          privacy: { profilePublic: true, showStats: true, allowMessages: true }
+        },
+        isVerified: false,
+        badges: []
+      };
     }
   }
 
   private async checkUsernameExists(username: string): Promise<boolean> {
     try {
+      if (!db) {
+        console.warn('Database not available, skipping username check');
+        return false;
+      }
+      
       const q = query(
         collection(db, 'users'),
         where('username', '==', username),
@@ -662,8 +811,17 @@ class FirebaseUserService {
       );
       const querySnapshot = await getDocs(q);
       return !querySnapshot.empty;
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to check username:', error);
+      
+      // Handle offline errors
+      if (error?.code === 'failed-precondition' || 
+          error?.message?.includes('offline') || 
+          error?.message?.includes('client is offline')) {
+        console.warn('🔄 Client is offline, username check skipped');
+        return false;
+      }
+      
       return false;
     }
   }
