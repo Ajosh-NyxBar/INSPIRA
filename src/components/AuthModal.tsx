@@ -35,6 +35,39 @@ export default function AuthModal({ isOpen, onClose, onSuccess, initialMode = 'l
     verificationCode: ''
   });
 
+  const resetForm = () => {
+    setFormData({
+      username: '',
+      email: '',
+      displayName: '',
+      password: '',
+      confirmPassword: '',
+      phoneNumber: '',
+      verificationCode: ''
+    });
+    setError(null);
+    setConfirmationResult(null);
+    if (recaptchaRef.current) {
+      recaptchaRef.current.clear();
+      recaptchaRef.current = null;
+    }
+  };
+
+  const handleModeSwitch = () => {
+    if (mode === 'login') {
+      setMode('register');
+    } else {
+      setMode('login');
+    }
+    setError(null);
+  };
+
+  const handleClose = () => {
+    resetForm();
+    setMode('login');
+    onClose();
+  };
+
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
@@ -162,19 +195,18 @@ export default function AuthModal({ isOpen, onClose, onSuccess, initialMode = 'l
       ...prev,
       [name]: value
     }));
+    if (error) setError(null); // Clear error when user types
   };
 
   const handlePhoneSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
+    
+    if (!validateForm()) return;
+    
     setLoading(true);
+    setError(null);
 
     try {
-      // Validate phone number
-      if (!formData.phoneNumber.trim()) {
-        throw new Error('Nomor HP tidak boleh kosong');
-      }
-
       // Setup reCAPTCHA if not already done
       if (!recaptchaRef.current) {
         const recaptcha = await UserSystem.setupRecaptcha('recaptcha-container');
@@ -199,24 +231,29 @@ export default function AuthModal({ isOpen, onClose, onSuccess, initialMode = 'l
 
   const handleVerifySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
+    
+    if (!validateForm()) return;
+    
     setLoading(true);
+    setError(null);
 
     try {
-      // Validate verification code
-      if (!formData.verificationCode.trim()) {
-        throw new Error('Kode verifikasi tidak boleh kosong');
-      }
-
       if (!confirmationResult) {
         throw new Error('Konfirmasi tidak ditemukan. Silakan kirim ulang kode.');
       }
 
-      // Verify phone number
-      const result = await UserSystem.verifyPhoneCode(confirmationResult, formData.verificationCode);
+      // Verify phone number with user data for registration
+      const userData = {
+        username: formData.username,
+        displayName: formData.displayName
+      };
+
+      const result = await UserSystem.verifyPhoneCode(confirmationResult, formData.verificationCode, userData);
       
       if (result.success && result.user) {
         onSuccess(result.user);
+        onClose();
+        resetForm();
       } else {
         throw new Error(result.error || 'Verifikasi gagal');
       }
@@ -307,33 +344,6 @@ export default function AuthModal({ isOpen, onClose, onSuccess, initialMode = 'l
     }
   };
 
-  const resetForm = () => {
-    setFormData({
-      username: '',
-      email: '',
-      displayName: '',
-      password: '',
-      confirmPassword: '',
-      phoneNumber: '',
-      verificationCode: ''
-    });
-    setError(null);
-    setConfirmationResult(null);
-  };
-
-  const switchMode = (newMode?: 'login' | 'register' | 'phone') => {
-    if (newMode) {
-      setMode(newMode);
-    } else {
-      setMode(mode === 'login' ? 'register' : 'login');
-    }
-    resetForm();
-  };
-
-  const handleModeSwitch = () => {
-    switchMode();
-  };
-
   if (!isOpen) return null;
 
   return (
@@ -347,7 +357,7 @@ export default function AuthModal({ isOpen, onClose, onSuccess, initialMode = 'l
               {mode === 'login' ? 'Selamat Datang' : 'Bergabung'}
             </h2>
             <button
-              onClick={onClose}
+              onClick={handleClose}
               className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors rounded-full p-1 hover:bg-gray-100 dark:hover:bg-gray-800"
             >
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -390,15 +400,25 @@ export default function AuthModal({ isOpen, onClose, onSuccess, initialMode = 'l
               {mode === 'login' ? 'Masuk' : 'Daftar'} dengan GitHub
             </button>
 
+            {/* Phone Auth Button - Show billing info */}
             <button
               onClick={() => setMode('phone')}
               disabled={loading}
-              className="w-full flex items-center justify-center px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-xl text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow-md"
+              className="w-full flex items-center justify-center px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-xl text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow-md relative group"
             >
               <svg className="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
               </svg>
               Masuk dengan Nomor HP
+              <span className="ml-2 text-xs bg-orange-100 text-orange-600 dark:bg-orange-900 dark:text-orange-300 px-2 py-1 rounded-full">
+                Beta
+              </span>
+              
+              {/* Tooltip */}
+              <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap z-10">
+                Memerlukan billing aktif di Firebase
+                <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
+              </div>
             </button>
           </div>
 
@@ -415,6 +435,53 @@ export default function AuthModal({ isOpen, onClose, onSuccess, initialMode = 'l
           {/* Form */}
           {mode === 'phone' ? (
             <form onSubmit={handlePhoneSubmit} className="space-y-4">
+              {/* Info Banner */}
+              <div className="p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl">
+                <div className="flex items-start space-x-3">
+                  <svg className="w-5 h-5 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.268 19c-.77.833.192 2.5 1.732 2.5z" />
+                  </svg>
+                  <div>
+                    <p className="text-amber-800 dark:text-amber-300 text-sm font-medium">
+                      Phone Authentication Beta
+                    </p>
+                    <p className="text-amber-700 dark:text-amber-400 text-xs mt-1">
+                      Memerlukan billing aktif di Firebase. Gunakan email/Google/GitHub login untuk alternatif yang bebas biaya.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Username
+                </label>
+                <input
+                  type="text"
+                  name="username"
+                  value={formData.username}
+                  onChange={handlePhoneInputChange}
+                  placeholder="Pilih username unik"
+                  className="w-full px-4 py-3 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-800 text-gray-800 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 transition-all duration-200"
+                  disabled={loading}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Nama Tampilan
+                </label>
+                <input
+                  type="text"
+                  name="displayName"
+                  value={formData.displayName}
+                  onChange={handlePhoneInputChange}
+                  placeholder="Nama yang akan ditampilkan"
+                  className="w-full px-4 py-3 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-800 text-gray-800 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 transition-all duration-200"
+                  disabled={loading}
+                />
+              </div>
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Nomor HP
