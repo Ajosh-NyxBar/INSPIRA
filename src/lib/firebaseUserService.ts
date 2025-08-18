@@ -649,40 +649,151 @@ class FirebaseUserService {
         return;
       }
       
-      const userDoc = await getDoc(doc(db, 'users', uid));
-      if (userDoc.exists()) {
-        this.currentUser = userDoc.data() as User;
+      // First try normal Firestore with shorter timeout
+      try {
+        console.log('📱 Attempting to load profile via Firestore...');
+        const profilePromise = getDoc(doc(db, 'users', uid));
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Firestore timeout')), 5000)
+        );
+        
+        const userDoc = await Promise.race([profilePromise, timeoutPromise]) as any;
+        
+        if (userDoc.exists()) {
+          this.currentUser = userDoc.data() as User;
+          console.log('✅ User profile loaded via Firestore');
+          return;
+        }
+      } catch (firestoreError: any) {
+        console.log('⚠️ Firestore failed, trying REST API fallback:', firestoreError?.message);
+        
+        // Fallback to REST API
+        try {
+          const { firebaseRestClient } = await import('./firebaseRestApi');
+          const userData = await firebaseRestClient.getDocument('users', uid);
+          
+          if (userData) {
+            this.currentUser = userData as User;
+            console.log('✅ User profile loaded via REST API');
+            return;
+          } else {
+            console.log('� User profile not found, creating default profile');
+            await this.createDefaultUserProfile(uid);
+            return;
+          }
+        } catch (restError: any) {
+          console.warn('⚠️ REST API also failed:', restError?.message);
+        }
       }
+      
+      // If both methods fail, create default profile
+      console.log('📄 Creating default profile due to connection issues');
+      await this.createDefaultUserProfile(uid);
+      
     } catch (error: any) {
-      console.error('Failed to load user profile:', error);
+      console.log('❌ Critical error in loadUserProfile:', error?.message || error);
       
-      // Handle offline errors gracefully
-      if (error?.code === 'failed-precondition' || 
-          error?.message?.includes('offline') || 
-          error?.message?.includes('client is offline')) {
-        console.log('🔄 Client is offline, profile will be loaded when connection is restored');
-        return;
+      // Last resort: create minimal profile
+      this.currentUser = {
+        id: uid,
+        username: `user_${uid.slice(0, 8)}`,
+        email: auth?.currentUser?.email || '',
+        displayName: auth?.currentUser?.displayName || 'User',
+        joinDate: new Date().toISOString(),
+        stats: { quotesShared: 0, favoriteCount: 0, followersCount: 0, followingCount: 0, totalLikes: 0 },
+        preferences: {
+          theme: 'light' as const,
+          language: 'en' as const,
+          notifications: { newFollowers: true, quoteLikes: true, newQuotes: true },
+          privacy: { profilePublic: true, showStats: true, allowMessages: true }
+        },
+        isVerified: false,
+        badges: []
+      };
+      console.log('🚑 Created emergency fallback profile');
+    }
+  }
+
+  private async createDefaultUserProfile(uid: string): Promise<void> {
+    try {
+      if (!auth?.currentUser) return;
+      
+      const defaultProfile: Partial<User> = {
+        id: uid,
+        email: auth.currentUser.email || '',
+        username: auth.currentUser.displayName || `user_${uid.slice(0, 8)}`,
+        displayName: auth.currentUser.displayName || 'Anonymous User',
+        avatar: auth.currentUser.photoURL || '',
+        bio: '',
+        joinDate: new Date().toISOString(),
+        stats: {
+          quotesShared: 0,
+          favoriteCount: 0,
+          followersCount: 0,
+          followingCount: 0,
+          totalLikes: 0
+        },
+        preferences: {
+          theme: 'light' as const,
+          language: 'en' as const,
+          notifications: {
+            newFollowers: true,
+            quoteLikes: true,
+            newQuotes: true
+          },
+          privacy: {
+            profilePublic: true,
+            showStats: true,
+            allowMessages: true
+          }
+        },
+        isVerified: false,
+        badges: []
+      };
+
+      // Try Firestore first
+      if (db) {
+        try {
+          await setDoc(doc(db, 'users', uid), defaultProfile, { merge: true });
+          console.log('✅ Default user profile created via Firestore');
+        } catch (firestoreError) {
+          console.log('⚠️ Firestore failed, trying REST API for profile creation');
+          
+          // Fallback to REST API
+          try {
+            const { firebaseRestClient } = await import('./firebaseRestApi');
+            await firebaseRestClient.setDocument('users', uid, defaultProfile, true);
+            console.log('✅ Default user profile created via REST API');
+          } catch (restError) {
+            console.warn('⚠️ Both Firestore and REST failed for profile creation:', restError);
+          }
+        }
       }
       
-      // Handle WebChannel connection errors
-      if (error?.message?.includes('400') || 
-          error?.message?.includes('Bad Request') ||
-          error?.message?.includes('WebChannelConnection')) {
-        console.log('🌐 Connection error, will retry when network is stable');
-        return;
-      }
+      // Set in memory regardless of storage success
+      this.currentUser = defaultProfile as User;
+      console.log('📱 Default profile set in memory');
       
-      // Handle other Firebase errors
-      if (error?.code === 'permission-denied') {
-        console.warn('🔒 Permission denied accessing user profile. Check Firestore rules.');
-        return;
-      }
+    } catch (error) {
+      console.warn('❌ Failed to create default profile:', error);
       
-      // Handle unavailable service
-      if (error?.code === 'unavailable') {
-        console.log('📡 Firebase service temporarily unavailable');
-        return;
-      }
+      // Emergency fallback - at least set something in memory
+      this.currentUser = {
+        id: uid,
+        username: `user_${uid.slice(0, 8)}`,
+        email: auth?.currentUser?.email || '',
+        displayName: 'User',
+        joinDate: new Date().toISOString(),
+        stats: { quotesShared: 0, favoriteCount: 0, followersCount: 0, followingCount: 0, totalLikes: 0 },
+        preferences: {
+          theme: 'light' as const,
+          language: 'en' as const,
+          notifications: { newFollowers: true, quoteLikes: true, newQuotes: true },
+          privacy: { profilePublic: true, showStats: true, allowMessages: true }
+        },
+        isVerified: false,
+        badges: []
+      };
     }
   }
 

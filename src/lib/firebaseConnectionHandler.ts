@@ -4,17 +4,19 @@
  */
 
 import { db, auth } from './firebase';
-import { enableNetwork, disableNetwork } from 'firebase/firestore';
+import { enableNetwork, disableNetwork, connectFirestoreEmulator } from 'firebase/firestore';
 import { User } from 'firebase/auth';
 
 class FirebaseConnectionHandler {
   private isOnline = true;
   private retryAttempts = 0;
-  private maxRetries = 3;
-  private retryDelay = 2000;
+  private maxRetries = 5;
+  private retryDelay = 1000;
+  private connectionCheckInterval: NodeJS.Timeout | null = null;
 
   constructor() {
     this.setupConnectionMonitoring();
+    this.startConnectionHealthCheck();
   }
 
   private setupConnectionMonitoring() {
@@ -39,6 +41,61 @@ class FirebaseConnectionHandler {
           }
         });
       }
+
+      // Listen for visibility changes to reconnect when tab becomes active
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden && this.isOnline) {
+          console.log('👁️ Tab visible, checking Firebase connection...');
+          this.ensureConnection();
+        }
+      });
+    }
+  }
+
+  private startConnectionHealthCheck() {
+    // Check connection every 30 seconds
+    this.connectionCheckInterval = setInterval(() => {
+      if (this.isOnline && typeof window !== 'undefined' && navigator.onLine) {
+        this.healthCheck();
+      }
+    }, 30000);
+  }
+
+  private async healthCheck() {
+    if (!db) return;
+    
+    try {
+      // Try to enable network to test connection
+      await enableNetwork(db);
+      if (this.retryAttempts > 0) {
+        console.log('✅ Firebase connection restored after health check');
+        this.retryAttempts = 0;
+      }
+    } catch (error) {
+      console.warn('⚠️ Firebase health check failed:', error);
+      this.retryAttempts++;
+      if (this.retryAttempts >= this.maxRetries) {
+        console.log('🔄 Max retries reached, will try to reconnect...');
+        this.forceReconnect();
+      }
+    }
+  }
+
+  private async forceReconnect() {
+    if (!db) return;
+    
+    try {
+      console.log('🔄 Force reconnecting Firebase...');
+      
+      // Disable then re-enable network
+      await disableNetwork(db);
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      await enableNetwork(db);
+      
+      console.log('✅ Force reconnection completed');
+      this.retryAttempts = 0;
+    } catch (error) {
+      console.warn('⚠️ Force reconnection failed:', error);
     }
   }
 
@@ -102,7 +159,25 @@ class FirebaseConnectionHandler {
     try {
       return await operation();
     } catch (error: any) {
-      console.warn('⚠️ Firebase operation failed:', error);
+      console.warn('⚠️ Firebase operation failed:', error?.message || error);
+      
+      // Import Firestore settings for connection handling
+      try {
+        const { firestoreSettings } = await import('./firestoreSettings');
+        const handled = await firestoreSettings.handleConnectionError(error);
+        
+        if (handled) {
+          // Retry operation once after handling
+          try {
+            return await operation();
+          } catch (retryError) {
+            console.warn('⚠️ Retry failed, using fallback:', retryError);
+            return fallback as T;
+          }
+        }
+      } catch (importError) {
+        console.warn('⚠️ Could not import firestoreSettings:', importError);
+      }
       
       // Handle specific Firebase errors
       if (error?.code === 'failed-precondition' || 
@@ -124,7 +199,7 @@ class FirebaseConnectionHandler {
           error?.message?.includes('Bad Request') ||
           error?.message?.includes('WebChannelConnection') ||
           error?.message?.includes('transport errored')) {
-        console.warn('🌐 Network/WebChannel error, retrying...');
+        console.warn('🌐 Network/WebChannel error, using fallback');
         this.scheduleRetry();
         return fallback as T;
       }

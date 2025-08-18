@@ -19,6 +19,7 @@ import { AISearchQuery } from '@/types/phase5';
 import AnalyticsService from '@/lib/analyticsService';
 import PremiumService from '@/lib/premiumService';
 import AIService from '@/lib/aiService';
+import { testRestApi } from '@/lib/testRestApi';
 
 type PageType = 'home' | 'favorites' | 'history' | 'categories' | 'community' | 'profile' | 'create' | 'analytics' | 'premium';
 
@@ -92,6 +93,12 @@ export default function Home() {
         }
       };
       loadAnalytics();
+      
+      // Test REST API when user is available
+      console.log('🧪 Running REST API test for user:', currentUser.id);
+      testRestApi().catch(error => {
+        console.error('REST API test failed:', error);
+      });
     }
   }, [currentUser, analyticsTimeRange]);
 

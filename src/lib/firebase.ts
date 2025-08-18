@@ -50,21 +50,23 @@ if (!isDemoMode) {
     db = getFirestore(app);
     auth = getAuth(app);
     storage = getStorage(app);
-    
+
     // Configure Firestore for better connectivity
     if (typeof window !== 'undefined') {
-      // Set Firestore settings for better offline support
-      try {
-        // Enable offline persistence and network
+      // Import and initialize Firestore settings
+      import('./firestoreSettings').then(({ firestoreSettings }) => {
+        firestoreSettings.initialize();
+      }).catch(error => {
+        console.warn('⚠️ Failed to load Firestore settings:', error);
+      });
+
+      // Basic network enable with timeout
+      setTimeout(() => {
         enableNetwork(db).catch((error) => {
           console.warn('⚠️ Could not enable Firestore network:', error);
         });
-      } catch (error) {
-        console.warn('⚠️ Firestore settings error:', error);
-      }
-    }
-    
-    // Initialize Analytics only in browser
+      }, 1000);
+    }    // Initialize Analytics only in browser
     if (typeof window !== 'undefined') {
       isSupported().then((supported) => {
         if (supported) {
